@@ -1,3 +1,4 @@
+
 from functools import lru_cache
 from typing import Literal
 
@@ -9,6 +10,7 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    database_url: str | None = None
 
 
 @lru_cache
