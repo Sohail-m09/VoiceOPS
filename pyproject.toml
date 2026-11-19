@@ -15,6 +15,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "faker>=40.54.0",
     "httpx2>=2.16.0",
     "pytest>=8.3.0",
     "ruff>=0.8.0",
