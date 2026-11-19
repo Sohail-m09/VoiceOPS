@@ -5,9 +5,11 @@ description = "Voice-enabled Agentic AI for Warehouse and Supply Chain Operation
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.13.0",
     "fastapi>=0.115.0",
     "psycopg[binary]>=3.3.9",
     "pydantic-settings>=2.6.0",
+    "sqlalchemy[asyncio]>=2.0.0",
     "uvicorn[standard]>=0.32.0",
 ]
 
