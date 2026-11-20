@@ -6,6 +6,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Uuid,
     func,
@@ -35,6 +36,7 @@ class Order(Base):
             "'completed', 'cancelled')",
             name="ck_orders_status",
         ),
+        Index("ix_orders_status_created_at", "status", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

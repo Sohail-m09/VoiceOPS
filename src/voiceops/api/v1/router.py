@@ -4,15 +4,21 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from voiceops.api.v1.dependencies import get_current_user
+from voiceops.api.v1.dependencies import (
+    get_current_user,
+    require_roles,
+    require_warehouse_access,
+)
 from voiceops.config import get_settings
 from voiceops.core.security import create_access_token
 from voiceops.database.connection import get_db
+from voiceops.repositories.audit_logs import AuditRepository
 from voiceops.repositories.products import ProductRepository
 from voiceops.repositories.shipments import ShipmentRepository
 from voiceops.repositories.users import UserRepository
 from voiceops.repositories.warehouses import WarehouseRepository
 from voiceops.schemas import (
+    AuditLogResponse,
     InventoryResponse,
     OrderResponse,
     ProductResponse,
@@ -22,6 +28,7 @@ from voiceops.schemas import (
     WarehouseResponse,
 )
 from voiceops.schemas.auth import LoginRequest, TokenResponse
+from voiceops.services.audit import AuditService
 from voiceops.services.auth import AuthService
 from voiceops.services.exceptions import BusinessRuleError, NotFoundError
 from voiceops.services.inventory import InventoryService
@@ -108,8 +115,10 @@ def serialize_shipment(shipment: Any) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Users
+# Authentication
 # ---------------------------------------------------------------------------
+
+
 @auth_router.post(
     "/login",
     response_model=TokenResponse,
@@ -118,7 +127,7 @@ async def login(
     payload: LoginRequest,
     session: AsyncSession = Depends(get_db),
 ):
-    """Authenticate a user and return a JWT access token."""
+    """Authenticate a user, record the login, and return a JWT."""
 
     service = AuthService(session)
 
@@ -134,6 +143,19 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Record successful login.
+    audit_service = AuditService(session)
+    await audit_service.record_action(
+        actor_user_id=user.id,
+        action="login_succeeded",
+        entity_type="user",
+        entity_id=str(user.id),
+        details={"email": user.email},
+    )
+
+    # Commit the audit record.
+    await session.commit()
+
     settings = get_settings()
 
     access_token = create_access_token(
@@ -148,7 +170,16 @@ async def login(
     }
 
 
-@router.get("/users", response_model=list[UserResponse])
+# ---------------------------------------------------------------------------
+# Users - Admin only
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/users",
+    response_model=list[UserResponse],
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def list_users(
     limit: int = Query(default=100, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -159,7 +190,11 @@ async def list_users(
     return [serialize_user(user) for user in users]
 
 
-@router.get("/users/{user_id}", response_model=UserResponse)
+@router.get(
+    "/users/{user_id}",
+    response_model=UserResponse,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def get_user(
     user_id: UUID,
     session: AsyncSession = Depends(get_db),
@@ -181,7 +216,11 @@ async def get_user(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/warehouses", response_model=list[WarehouseResponse])
+@router.get(
+    "/warehouses",
+    response_model=list[WarehouseResponse],
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def list_warehouses(
     limit: int = Query(default=100, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -192,7 +231,11 @@ async def list_warehouses(
     return [serialize_warehouse(warehouse) for warehouse in warehouses]
 
 
-@router.get("/warehouses/{warehouse_id}", response_model=WarehouseResponse)
+@router.get(
+    "/warehouses/{warehouse_id}",
+    response_model=WarehouseResponse,
+    dependencies=[Depends(require_warehouse_access)],
+)
 async def get_warehouse(
     warehouse_id: UUID,
     session: AsyncSession = Depends(get_db),
@@ -210,7 +253,7 @@ async def get_warehouse(
 
 
 # ---------------------------------------------------------------------------
-# Products
+# Products - All authenticated roles can read
 # ---------------------------------------------------------------------------
 
 
@@ -243,13 +286,14 @@ async def get_product(
 
 
 # ---------------------------------------------------------------------------
-# Inventory
+# Inventory - Warehouse assignment required
 # ---------------------------------------------------------------------------
 
 
 @router.get(
     "/inventory/{warehouse_id}",
     response_model=list[InventoryResponse],
+    dependencies=[Depends(require_warehouse_access)],
 )
 async def list_warehouse_inventory(
     warehouse_id: UUID,
@@ -301,9 +345,11 @@ async def get_order(
     "/orders/transfer",
     status_code=status.HTTP_201_CREATED,
     response_model=OrderResponse,
+    dependencies=[Depends(require_roles("admin", "warehouse_manager", "operator"))],
 )
 async def create_transfer_order(
     payload: TransferOrderCreate,
+    current_user=Depends(get_current_user),
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     service = OrderService(session)
@@ -313,6 +359,7 @@ async def create_transfer_order(
             source_warehouse_id=payload.source_warehouse_id,
             destination_warehouse_id=payload.destination_warehouse_id,
             items=[item.model_dump() for item in payload.items],
+            actor_user_id=current_user.id,
         )
 
         return await service.get_order_details(order.order_number)
@@ -328,6 +375,30 @@ async def create_transfer_order(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Audit Logs - Admin only
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/audit-logs",
+    response_model=list[AuditLogResponse],
+    dependencies=[Depends(require_roles("admin"))],
+)
+async def list_audit_logs(
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_db),
+):
+    """Return recent audit records. Accessible only to admins."""
+    repository = AuditRepository(session)
+
+    return await repository.get_recent(
+        limit=limit,
+        offset=offset,
+    )
 
 
 # ---------------------------------------------------------------------------

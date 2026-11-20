@@ -6,6 +6,7 @@ from voiceops.repositories.inventory import InventoryRepository
 from voiceops.repositories.orders import OrderRepository
 from voiceops.repositories.products import ProductRepository
 from voiceops.repositories.warehouses import WarehouseRepository
+from voiceops.services.audit import AuditService
 from voiceops.services.exceptions import (
     BusinessRuleError,
     InsufficientStockError,
@@ -23,14 +24,16 @@ class OrderService:
         self.warehouses = WarehouseRepository(session)
         self.products = ProductRepository(session)
         self.inventory = InventoryRepository(session)
+        self.audit = AuditService(session)
 
     async def create_transfer_order(
         self,
         source_warehouse_id: UUID,
         destination_warehouse_id: UUID,
         items: list[dict],
+        actor_user_id: UUID | None = None,
     ):
-        """Create a validated draft warehouse transfer order."""
+        """Create a validated draft transfer order and audit the action."""
 
         if source_warehouse_id == destination_warehouse_id:
             raise BusinessRuleError("Source and destination warehouses must be different.")
@@ -100,9 +103,19 @@ class OrderService:
                 }
             )
 
-            await self.orders.create_items(
-                order.id,
-                items,
+            await self.orders.create_items(order.id, items)
+
+            await self.audit.record_action(
+                actor_user_id=actor_user_id,
+                action="transfer_order_created",
+                entity_type="order",
+                entity_id=str(order.id),
+                details={
+                    "order_number": order.order_number,
+                    "source_warehouse_id": str(source_warehouse_id),
+                    "destination_warehouse_id": str(destination_warehouse_id),
+                    "item_count": len(items),
+                },
             )
 
             return order

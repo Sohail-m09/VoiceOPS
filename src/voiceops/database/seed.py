@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import argparse
@@ -10,7 +11,8 @@ from pathlib import Path
 from uuid import UUID
 
 from pwdlib import PasswordHash
-from sqlalchemy import DateTime, Uuid, func, insert, select
+from sqlalchemy import DateTime, Uuid, func, insert, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from voiceops.database.models import (
     AuditLog,
@@ -42,6 +44,33 @@ TABLE_MODELS = [
     ("shipment_events", ShipmentEvent),
     ("audit_logs", AuditLog),
 ]
+
+# Tables whose BIGINT primary keys use PostgreSQL sequences.
+SEQUENCE_TABLES = (
+    "inventory_movements",
+    "order_items",
+    "shipment_items",
+    "shipment_events",
+    "audit_logs",
+)
+
+
+async def synchronize_sequences(session: AsyncSession) -> None:
+    """Synchronize auto-increment sequences after explicit-ID inserts."""
+
+    for table_name in SEQUENCE_TABLES:
+        statement = text(
+            f"""
+            SELECT setval(
+                pg_get_serial_sequence('public.{table_name}', 'id'),
+                COALESCE(MAX(id), 1),
+                MAX(id) IS NOT NULL
+            )
+            FROM public."{table_name}"
+            """
+        )
+
+        await session.execute(statement)
 
 
 def prepare_seed_records(
@@ -96,7 +125,8 @@ async def seed_database(records: dict[str, list[dict]]) -> None:
 
                 if count:
                     raise RuntimeError(
-                        f"Table '{table_name}' already contains {count} records. Seeding cancelled."
+                        f"Table '{table_name}' already contains {count} records. "
+                        "Seeding cancelled."
                     )
 
             # Insert records in foreign-key dependency order.
@@ -110,6 +140,10 @@ async def seed_database(records: dict[str, list[dict]]) -> None:
                     )
 
                 print(f"Inserted {len(table_records):>4} records into {table_name}")
+
+            # Synchronize sequences before the transaction commits.
+            await synchronize_sequences(session)
+            print("Synchronized auto-increment sequences.")
 
 
 def load_dataset(input_path: Path) -> dict:

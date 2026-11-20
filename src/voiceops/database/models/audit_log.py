@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Uuid,
     func,
@@ -22,6 +23,10 @@ if TYPE_CHECKING:
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+
+    __table_args__ = (
+        Index("ix_audit_logs_created_at_id", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(
         BigInteger,

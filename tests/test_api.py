@@ -1,8 +1,31 @@
+from types import SimpleNamespace
+
+import pytest
 from fastapi.testclient import TestClient
 
+from voiceops.api.v1.dependencies import get_current_user
 from voiceops.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def authenticated_api_tests():
+    """Override authentication for API validation tests."""
+
+    test_user = SimpleNamespace(
+        id="00000000-0000-0000-0000-000000000001",
+        full_name="Test Operator",
+        email="operator@voiceops.demo",
+        role="admin",
+        is_active=True,
+    )
+
+    app.dependency_overrides[get_current_user] = lambda: test_user
+
+    yield
+
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_api_routes_are_registered():
