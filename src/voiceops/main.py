@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from voiceops import __version__
+from voiceops.api.v1.router import router as api_router
 from voiceops.config import get_settings
 from voiceops.logging_config import configure_logging
 
@@ -16,6 +17,8 @@ app = FastAPI(
     version=__version__,
 )
 
+app.include_router(api_router, prefix="/api/v1")
+
 
 class HealthResponse(BaseModel):
     status: str
@@ -27,4 +30,8 @@ class HealthResponse(BaseModel):
 async def health() -> HealthResponse:
     logger.debug("Health check requested")
     settings = get_settings()
-    return HealthResponse(status="ok", version=__version__, environment=settings.app_env)
+    return HealthResponse(
+        status="ok",
+        version=__version__,
+        environment=settings.app_env,
+    )
