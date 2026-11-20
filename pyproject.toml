@@ -6,10 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13.0",
+    "email-validator>=2.0.0",
     "fastapi>=0.115.0",
     "psycopg[binary]>=3.3.9",
     "pwdlib[argon2]>=0.4.2",
     "pydantic-settings>=2.6.0",
+    "pyjwt>=2.10.0",
     "sqlalchemy[asyncio]>=2.0.0",
     "uvicorn[standard]>=0.32.0",
 ]
@@ -19,6 +21,7 @@ dev = [
     "faker>=40.54.0",
     "httpx2>=2.16.0",
     "pytest>=8.3.0",
+    "pytest-asyncio>=1.5.0",
     "ruff>=0.8.0",
 ]
 
@@ -38,3 +41,5 @@ select = ["E", "F", "I", "W", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

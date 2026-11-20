@@ -4,7 +4,12 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from voiceops import __version__
-from voiceops.api.v1.router import router as api_router
+from voiceops.api.v1.router import (
+    auth_router,
+)
+from voiceops.api.v1.router import (
+    router as api_router,
+)
 from voiceops.config import get_settings
 from voiceops.logging_config import configure_logging
 
@@ -18,6 +23,7 @@ app = FastAPI(
 )
 
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(auth_router, prefix="/api/v1")
 
 
 class HealthResponse(BaseModel):

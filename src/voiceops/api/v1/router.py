@@ -4,6 +4,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from voiceops.api.v1.dependencies import get_current_user
+from voiceops.config import get_settings
+from voiceops.core.security import create_access_token
 from voiceops.database.connection import get_db
 from voiceops.repositories.products import ProductRepository
 from voiceops.repositories.shipments import ShipmentRepository
@@ -18,11 +21,20 @@ from voiceops.schemas import (
     UserResponse,
     WarehouseResponse,
 )
+from voiceops.schemas.auth import LoginRequest, TokenResponse
+from voiceops.services.auth import AuthService
 from voiceops.services.exceptions import BusinessRuleError, NotFoundError
 from voiceops.services.inventory import InventoryService
 from voiceops.services.orders import OrderService
 
-router = APIRouter()
+router = APIRouter(
+    dependencies=[Depends(get_current_user)],
+)
+
+auth_router = APIRouter(
+    prefix="/auth",
+    tags=["Authentication"],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +110,42 @@ def serialize_shipment(shipment: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Users
 # ---------------------------------------------------------------------------
+@auth_router.post(
+    "/login",
+    response_model=TokenResponse,
+)
+async def login(
+    payload: LoginRequest,
+    session: AsyncSession = Depends(get_db),
+):
+    """Authenticate a user and return a JWT access token."""
+
+    service = AuthService(session)
+
+    user = await service.authenticate_user(
+        email=str(payload.email),
+        password=payload.password,
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    settings = get_settings()
+
+    access_token = create_access_token(
+        subject=str(user.id),
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": settings.jwt_access_token_expire_minutes * 60,
+        "user": user,
+    }
 
 
 @router.get("/users", response_model=list[UserResponse])
