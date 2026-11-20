@@ -1,4 +1,3 @@
-
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -30,8 +29,7 @@ class Inventory(Base):
             name="ck_inventory_quantity_on_hand_nonnegative",
         ),
         CheckConstraint(
-            "quantity_reserved >= 0 "
-            "AND quantity_reserved <= quantity_on_hand",
+            "quantity_reserved >= 0 AND quantity_reserved <= quantity_on_hand",
             name="ck_inventory_quantity_reserved_valid",
         ),
     )

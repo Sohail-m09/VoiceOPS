@@ -1,4 +1,3 @@
-
 from voiceops.config import Settings
 
 

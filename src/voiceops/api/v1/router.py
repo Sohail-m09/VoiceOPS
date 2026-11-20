@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from voiceops.database.connection import get_db
@@ -9,6 +9,15 @@ from voiceops.repositories.products import ProductRepository
 from voiceops.repositories.shipments import ShipmentRepository
 from voiceops.repositories.users import UserRepository
 from voiceops.repositories.warehouses import WarehouseRepository
+from voiceops.schemas import (
+    InventoryResponse,
+    OrderResponse,
+    ProductResponse,
+    ShipmentResponse,
+    TransferOrderCreate,
+    UserResponse,
+    WarehouseResponse,
+)
 from voiceops.services.exceptions import BusinessRuleError, NotFoundError
 from voiceops.services.inventory import InventoryService
 from voiceops.services.orders import OrderService
@@ -91,7 +100,7 @@ def serialize_shipment(shipment: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/users")
+@router.get("/users", response_model=list[UserResponse])
 async def list_users(
     limit: int = Query(default=100, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -102,7 +111,7 @@ async def list_users(
     return [serialize_user(user) for user in users]
 
 
-@router.get("/users/{user_id}")
+@router.get("/users/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: UUID,
     session: AsyncSession = Depends(get_db),
@@ -124,7 +133,7 @@ async def get_user(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/warehouses")
+@router.get("/warehouses", response_model=list[WarehouseResponse])
 async def list_warehouses(
     limit: int = Query(default=100, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -135,7 +144,7 @@ async def list_warehouses(
     return [serialize_warehouse(warehouse) for warehouse in warehouses]
 
 
-@router.get("/warehouses/{warehouse_id}")
+@router.get("/warehouses/{warehouse_id}", response_model=WarehouseResponse)
 async def get_warehouse(
     warehouse_id: UUID,
     session: AsyncSession = Depends(get_db),
@@ -157,7 +166,7 @@ async def get_warehouse(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/products")
+@router.get("/products", response_model=list[ProductResponse])
 async def list_products(
     limit: int = Query(default=100, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -168,7 +177,7 @@ async def list_products(
     return [serialize_product(product) for product in products]
 
 
-@router.get("/products/{product_id}")
+@router.get("/products/{product_id}", response_model=ProductResponse)
 async def get_product(
     product_id: UUID,
     session: AsyncSession = Depends(get_db),
@@ -190,7 +199,10 @@ async def get_product(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/inventory/{warehouse_id}")
+@router.get(
+    "/inventory/{warehouse_id}",
+    response_model=list[InventoryResponse],
+)
 async def list_warehouse_inventory(
     warehouse_id: UUID,
     limit: int = Query(default=100, ge=1, le=100),
@@ -221,7 +233,7 @@ async def list_warehouse_inventory(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/orders/{order_number}")
+@router.get("/orders/{order_number}", response_model=OrderResponse)
 async def get_order(
     order_number: str,
     session: AsyncSession = Depends(get_db),
@@ -237,55 +249,22 @@ async def get_order(
         ) from exc
 
 
-def parse_transfer_payload(payload: dict[str, Any]) -> tuple[UUID, UUID, list[dict]]:
-    """Validate and convert the basic transfer-order request structure."""
-    try:
-        source_warehouse_id = UUID(str(payload["source_warehouse_id"]))
-        destination_warehouse_id = UUID(str(payload["destination_warehouse_id"]))
-        raw_items = payload["items"]
-
-        if not isinstance(raw_items, list):
-            raise ValueError("Items must be a list.")
-
-        if not raw_items:
-            raise ValueError("At least one order item is required.")
-
-        items = []
-
-        for item in raw_items:
-            if not isinstance(item, dict):
-                raise ValueError("Each item must be an object.")
-
-            items.append(
-                {
-                    "product_id": UUID(str(item["product_id"])),
-                    "quantity_ordered": item["quantity_ordered"],
-                }
-            )
-
-        return source_warehouse_id, destination_warehouse_id, items
-
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid transfer-order request: {exc}",
-        ) from exc
-
-
-@router.post("/orders/transfer", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/orders/transfer",
+    status_code=status.HTTP_201_CREATED,
+    response_model=OrderResponse,
+)
 async def create_transfer_order(
-    payload: dict[str, Any] = Body(...),
+    payload: TransferOrderCreate,
     session: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    source_id, destination_id, items = parse_transfer_payload(payload)
-
     service = OrderService(session)
 
     try:
         order = await service.create_transfer_order(
-            source_warehouse_id=source_id,
-            destination_warehouse_id=destination_id,
-            items=items,
+            source_warehouse_id=payload.source_warehouse_id,
+            destination_warehouse_id=payload.destination_warehouse_id,
+            items=[item.model_dump() for item in payload.items],
         )
 
         return await service.get_order_details(order.order_number)
@@ -295,6 +274,7 @@ async def create_transfer_order(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
     except BusinessRuleError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -307,7 +287,10 @@ async def create_transfer_order(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/shipments/{shipment_number}")
+@router.get(
+    "/shipments/{shipment_number}",
+    response_model=ShipmentResponse,
+)
 async def get_shipment(
     shipment_number: str,
     session: AsyncSession = Depends(get_db),

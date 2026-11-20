@@ -1,4 +1,3 @@
-
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -94,9 +93,9 @@ class Order(Base):
     )
 
     items: Mapped[list["OrderItem"]] = relationship(
-    back_populates="order",
-    passive_deletes="all",
-    lazy="raise",
+        back_populates="order",
+        passive_deletes="all",
+        lazy="raise",
     )
 
     inventory_movements: Mapped[list["InventoryMovement"]] = relationship(

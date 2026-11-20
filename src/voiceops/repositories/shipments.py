@@ -1,4 +1,3 @@
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,9 +13,7 @@ class ShipmentRepository(BaseRepository[Shipment]):
         self,
         shipment_number: str,
     ) -> Shipment | None:
-        statement = select(Shipment).where(
-            Shipment.shipment_number == shipment_number
-        )
+        statement = select(Shipment).where(Shipment.shipment_number == shipment_number)
 
         result = await self.session.execute(statement)
 

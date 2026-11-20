@@ -1,4 +1,3 @@
-
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
@@ -18,9 +17,7 @@ def test_user_repository_get_by_email():
 
     repository = UserRepository(session)
 
-    user = asyncio.run(
-        repository.get_by_email("operator@voiceops.demo")
-    )
+    user = asyncio.run(repository.get_by_email("operator@voiceops.demo"))
 
     assert user is expected_user
     session.execute.assert_awaited_once()
@@ -33,12 +30,14 @@ def test_base_repository_create_flushes_record():
     repository = BaseRepository(session, User)
 
     user = asyncio.run(
-        repository.create({
-            "full_name": "Test Operator",
-            "email": "test@voiceops.demo",
-            "password_hash": "test-hash",
-            "role": "operator",
-        })
+        repository.create(
+            {
+                "full_name": "Test Operator",
+                "email": "test@voiceops.demo",
+                "password_hash": "test-hash",
+                "role": "operator",
+            }
+        )
     )
 
     assert isinstance(user, User)

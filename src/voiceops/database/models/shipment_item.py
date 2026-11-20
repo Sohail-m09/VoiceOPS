@@ -1,4 +1,3 @@
-
 import uuid
 from typing import TYPE_CHECKING
 
@@ -34,8 +33,7 @@ class ShipmentItem(Base):
             name="ck_shipment_items_quantity_shipped_positive",
         ),
         CheckConstraint(
-            "quantity_received >= 0 "
-            "AND quantity_received <= quantity_shipped",
+            "quantity_received >= 0 AND quantity_received <= quantity_shipped",
             name="ck_shipment_items_quantity_received_valid",
         ),
     )

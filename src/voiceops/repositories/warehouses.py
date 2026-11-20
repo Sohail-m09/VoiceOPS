@@ -1,4 +1,3 @@
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,9 +10,7 @@ class WarehouseRepository(BaseRepository[Warehouse]):
         super().__init__(session, Warehouse)
 
     async def get_by_code(self, code: str) -> Warehouse | None:
-        statement = select(Warehouse).where(
-            Warehouse.code == code
-        )
+        statement = select(Warehouse).where(Warehouse.code == code)
 
         result = await self.session.execute(statement)
 

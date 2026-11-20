@@ -1,4 +1,3 @@
-
 from uuid import UUID
 
 from sqlalchemy import select
@@ -17,9 +16,7 @@ class InventoryRepository(BaseRepository[Inventory]):
         warehouse_id: UUID,
         product_id: UUID,
     ) -> Inventory | None:
-        return await self.get_by_id(
-            (warehouse_id, product_id)
-        )
+        return await self.get_by_id((warehouse_id, product_id))
 
     async def list_by_warehouse(
         self,

@@ -1,4 +1,3 @@
-
 from voiceops.repositories.inventory import InventoryRepository
 from voiceops.repositories.orders import OrderRepository
 from voiceops.repositories.products import ProductRepository

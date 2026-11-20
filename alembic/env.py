@@ -71,9 +71,7 @@ def run_migrations_online() -> None:
 
     asyncio.run(
         run_async_migrations(),
-        loop_factory=lambda: asyncio.SelectorEventLoop(
-            selectors.SelectSelector()
-        ),
+        loop_factory=lambda: asyncio.SelectorEventLoop(selectors.SelectSelector()),
     )
 
 
