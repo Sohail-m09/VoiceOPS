@@ -11,10 +11,11 @@ from voiceops.api.v1.router import (
     router as api_router,
 )
 from voiceops.config import get_settings
-from voiceops.logging_config import configure_logging
+from voiceops.harness.logging_manager import configure_logging
 
 configure_logging(get_settings().log_level)
 logger = logging.getLogger(__name__)
+configure_logging()
 
 app = FastAPI(
     title="VoiceOps",
