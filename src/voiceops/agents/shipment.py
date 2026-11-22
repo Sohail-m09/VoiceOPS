@@ -9,12 +9,18 @@ from voiceops.agents.shipment_tools import (
 )
 from voiceops.agents.state import AgentResult, EvidenceItem
 from voiceops.harness.context_manager import ExecutionContext
-from voiceops.harness.executor import ToolExecutionError
+from voiceops.harness.executor import ToolExecutionError, ToolExecutor
 from voiceops.harness.policy_engine import PolicyDeniedError
 
 
 class ShipmentAgent:
     """Specialist agent for read-only warehouse shipment investigations."""
+
+    def __init__(
+        self,
+        tool_executor: ToolExecutor | None = None,
+    ) -> None:
+        self.tool_executor = tool_executor
 
     SHIPMENT_NUMBER_PATTERN = re.compile(
         r"\bshipment\s+(?:number|no\.?)\s*(?:is\s+|[:=#]\s*|\s+)"
@@ -92,7 +98,10 @@ class ShipmentAgent:
             )
 
         try:
-            executor = create_shipment_executor(context=context)
+            executor = self.tool_executor
+
+            if executor is None:
+                executor = create_shipment_executor(context=context)
 
             shipment = await executor.execute(
                 tool_name=SHIPMENT_TOOL_NAME,

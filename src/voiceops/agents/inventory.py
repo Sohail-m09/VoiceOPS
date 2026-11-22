@@ -12,7 +12,7 @@ from voiceops.agents.inventory_tools import (
 from voiceops.agents.state import AgentResult, EvidenceItem
 from voiceops.database.connection import AsyncSessionLocal
 from voiceops.harness.context_manager import ExecutionContext
-from voiceops.harness.executor import ToolExecutionError
+from voiceops.harness.executor import ToolExecutionError, ToolExecutor
 from voiceops.harness.policy_engine import PolicyDeniedError
 
 
@@ -36,8 +36,10 @@ class InventoryAgent:
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal,
+        tool_executor: ToolExecutor | None = None,
     ) -> None:
         self.session_factory = session_factory
+        self.tool_executor = tool_executor
 
     @classmethod
     def extract_identifiers(
@@ -111,10 +113,13 @@ class InventoryAgent:
             )
 
         try:
-            executor = create_inventory_executor(
-                context=context,
-                session_factory=self.session_factory,
-            )
+            executor = self.tool_executor
+
+            if executor is None:
+                executor = create_inventory_executor(
+                    context=context,
+                    session_factory=self.session_factory,
+                )
 
             stock = await executor.execute(
                 tool_name=INVENTORY_TOOL_NAME,

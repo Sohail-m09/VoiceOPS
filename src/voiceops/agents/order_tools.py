@@ -156,23 +156,26 @@ def create_order_executor(
         )
     )
 
-    policy_engine = PolicyEngine(
-        {
-            ORDER_TOOL_NAME: ToolPolicy(
-                allowed_roles=frozenset(
-                    {
-                        "admin",
-                        "warehouse_manager",
-                        "operator",
-                        "analyst",
-                    }
-                ),
-                # Actual warehouse access is checked against PostgreSQL
-                # inside the handler, including the admin exception.
-                requires_warehouse_access=False,
-            )
-        }
+
+    policy_engine = PolicyEngine()
+
+    policy_engine.register_policy(
+        ORDER_TOOL_NAME,
+        ToolPolicy(
+            allowed_roles=frozenset(
+                {
+                    "admin",
+                    "warehouse_manager",
+                    "operator",
+                    "analyst",
+                }
+            ),
+            # Actual warehouse access is checked against PostgreSQL
+            # inside the handler, including the admin exception.
+            requires_warehouse_access=False,
+        ),
     )
+
 
     return ToolExecutor(
         registry=registry,

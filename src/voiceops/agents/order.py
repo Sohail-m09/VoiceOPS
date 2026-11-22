@@ -9,12 +9,18 @@ from voiceops.agents.order_tools import (
 )
 from voiceops.agents.state import AgentResult, EvidenceItem
 from voiceops.harness.context_manager import ExecutionContext
-from voiceops.harness.executor import ToolExecutionError
+from voiceops.harness.executor import ToolExecutionError, ToolExecutor
 from voiceops.harness.policy_engine import PolicyDeniedError
 
 
 class OrderAgent:
     """Specialist agent for read-only warehouse order investigations."""
+
+    def __init__(
+        self,
+        tool_executor: ToolExecutor | None = None,
+    ) -> None:
+        self.tool_executor = tool_executor
 
     ORDER_PATTERN = re.compile(
         r"\b(ORD-[A-Za-z0-9-]+)\b",
@@ -78,7 +84,10 @@ class OrderAgent:
             )
 
         try:
-            executor = create_order_executor(context=context)
+            executor = self.tool_executor
+
+            if executor is None:
+                executor = create_order_executor(context=context)
 
             order = await executor.execute(
                 tool_name=ORDER_TOOL_NAME,
