@@ -1,7 +1,7 @@
-
 import asyncio
 from uuid import uuid4
 
+import pytest
 from fastmcp import FastMCP
 
 from voiceops.agents.escalation_tools import ESCALATION_TOOL_NAME
@@ -9,6 +9,7 @@ from voiceops.agents.inventory_tools import INVENTORY_TOOL_NAME
 from voiceops.agents.order_tools import ORDER_TOOL_NAME
 from voiceops.agents.shipment_tools import SHIPMENT_TOOL_NAME
 from voiceops.harness.context_manager import ExecutionContext
+from voiceops.harness.policy_engine import PolicyDeniedError
 from voiceops.mcp.client import create_mcp_client
 from voiceops.mcp.harness_adapter import create_mcp_tool_executor
 
@@ -66,7 +67,10 @@ def test_harness_adapter_calls_all_mcp_tools():
         )
 
         async with create_mcp_client(server) as client:
-            executor = create_mcp_tool_executor(client)
+            executor = create_mcp_tool_executor(
+                client,
+                trusted_context=context,
+            )
 
             inventory = await executor.execute(
                 tool_name=INVENTORY_TOOL_NAME,
@@ -108,3 +112,36 @@ def test_harness_adapter_calls_all_mcp_tools():
         assert escalation["execution_status"] == "not_executed"
 
     asyncio.run(run_test())
+
+
+@pytest.mark.asyncio
+async def test_harness_adapter_rejects_another_users_context() -> None:
+    trusted_context = ExecutionContext(
+        user_id=uuid4(),
+        user_role="operator",
+        request_text="Check inventory.",
+    )
+
+    # Simulate a different user attempting to reuse this MCP session.
+    untrusted_context = trusted_context.model_copy(update={"user_id": uuid4()})
+
+    server = FastMCP("VoiceOps MCP Security Test")
+
+    async with create_mcp_client(server) as client:
+        executor = create_mcp_tool_executor(
+            client,
+            trusted_context=trusted_context,
+        )
+
+        with pytest.raises(
+            PolicyDeniedError,
+            match="trusted MCP session context",
+        ):
+            await executor.execute(
+                tool_name=INVENTORY_TOOL_NAME,
+                arguments={
+                    "sku": "SKU-100",
+                    "warehouse_code": "PUN-01",
+                },
+                context=untrusted_context,
+            )

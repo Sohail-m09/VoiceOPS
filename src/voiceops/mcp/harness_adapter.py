@@ -1,4 +1,3 @@
-
 from fastmcp import Client
 
 from voiceops.agents.escalation_tools import (
@@ -17,6 +16,7 @@ from voiceops.agents.shipment_tools import (
     SHIPMENT_TOOL_NAME,
     ShipmentToolArguments,
 )
+from voiceops.harness.context_manager import ExecutionContext
 from voiceops.harness.executor import ToolExecutor
 from voiceops.harness.policy_engine import PolicyEngine, ToolPolicy
 from voiceops.harness.tool_registry import ToolDefinition, ToolRegistry
@@ -32,7 +32,10 @@ ALLOWED_ROLES = frozenset(
 )
 
 
-def create_mcp_tool_executor(client: Client) -> ToolExecutor:
+def create_mcp_tool_executor(
+    client: Client,
+    trusted_context: ExecutionContext,
+) -> ToolExecutor:
     """Create a harness executor that forwards calls to an MCP server."""
 
     registry = ToolRegistry()
@@ -119,7 +122,9 @@ def create_mcp_tool_executor(client: Client) -> ToolExecutor:
         )
     )
 
-    policy_engine = PolicyEngine()
+    policy_engine = PolicyEngine(
+        trusted_context=trusted_context,
+    )
 
     for tool_name in (
         INVENTORY_TOOL_NAME,

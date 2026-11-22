@@ -12,6 +12,7 @@ from voiceops.agents.response import consolidate_agent_outputs
 from voiceops.agents.shipment import ShipmentAgent
 from voiceops.agents.state import VoiceOpsState
 from voiceops.agents.supervisor import SupervisorAgent
+from voiceops.harness.context_manager import ExecutionContext
 from voiceops.mcp.harness_adapter import create_mcp_tool_executor
 
 AGENT_RESULT_KEYS = {
@@ -46,13 +47,22 @@ def build_agent_graph(
     order_agent: OrderAgent | None = None,
     shipment_agent: ShipmentAgent | None = None,
     mcp_client: Client | None = None,
+    execution_context: ExecutionContext | None = None,
     checkpointer: Any | None = None,
 ):
-    """Build the agent graph with optional MCP-backed tool execution."""
+    """Build the agent graph with optional trusted MCP-backed execution."""
+
+    if mcp_client is not None and execution_context is None:
+        raise ValueError(
+            "A trusted execution context is required for an MCP-backed graph."
+        )
 
     mcp_executor = (
-        create_mcp_tool_executor(mcp_client)
-        if mcp_client is not None
+        create_mcp_tool_executor(
+            mcp_client,
+            trusted_context=execution_context,
+        )
+        if mcp_client is not None and execution_context is not None
         else None
     )
 

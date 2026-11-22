@@ -22,10 +22,14 @@ class ToolPolicy:
 
 
 class PolicyEngine:
-    """Controls whether a user can execute a registered tool."""
+    """Controls tool access and optionally binds execution to one context."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        trusted_context: ExecutionContext | None = None,
+    ) -> None:
         self._policies: dict[str, ToolPolicy] = {}
+        self._trusted_context = trusted_context
 
     def register_policy(
         self,
@@ -57,7 +61,16 @@ class PolicyEngine:
         context: ExecutionContext,
         arguments: dict,
     ) -> None:
-        """Authorize a tool request using context and validated arguments."""
+        """Authorize a tool request using trusted context and tool policy."""
+
+        # Reject a context that differs from the one bound to this session.
+        if (
+            self._trusted_context is not None
+            and context != self._trusted_context
+        ):
+            raise PolicyDeniedError(
+                "Execution context does not match the trusted MCP session context."
+            )
 
         policy = self._policies.get(tool_name)
 
