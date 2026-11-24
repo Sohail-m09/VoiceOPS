@@ -1,3 +1,4 @@
+
 import operator
 from typing import Annotated, Any, Literal, TypedDict
 
@@ -7,12 +8,14 @@ AgentName = Literal[
     "inventory",
     "order",
     "shipment",
+    "knowledge",
 ]
 
 RequestIntent = Literal[
     "inventory",
     "order",
     "shipment",
+    "knowledge",
     "mixed",
     "unknown",
 ]
@@ -25,7 +28,7 @@ AgentStatus = Literal[
 
 
 class AgentResult(TypedDict):
-    """Standard result returned by a specialist agent."""
+    """Standard result returned by an individual specialist."""
 
     status: AgentStatus
     summary: str
@@ -43,44 +46,26 @@ class EvidenceItem(TypedDict):
 class VoiceOpsState(TypedDict, total=False):
     """Shared state passed between LangGraph nodes."""
 
-    # Original request and trusted execution context.
     request_text: str
     execution_context: dict[str, Any]
 
-    # Supervisor classification and routing.
     intent: RequestIntent
     selected_agents: list[AgentName]
 
-    # Specialist agent results.
     inventory_result: AgentResult | None
     order_result: AgentResult | None
     shipment_result: AgentResult | None
+    knowledge_result: AgentResult | None
 
-    # Shared results collected by multiple agents.
-    completed_agents: Annotated[
-        list[AgentName],
-        operator.add,
-    ]
-
-    evidence: Annotated[
-        list[EvidenceItem],
-        operator.add,
-    ]
-
-    errors: Annotated[
-        list[str],
-        operator.add,
-    ]
-
-    # Final response.
+    completed_agents: Annotated[list[AgentName], operator.add]
+    evidence: Annotated[list[EvidenceItem], operator.add]
+    errors: Annotated[list[str], operator.add]
 
     final_response: str | None
     final_result: dict[str, Any] | None
 
 
-def create_initial_state(
-    context: ExecutionContext,
-) -> VoiceOpsState:
+def create_initial_state(context: ExecutionContext) -> VoiceOpsState:
     """Create the initial state for a new agent execution."""
 
     return {
@@ -91,6 +76,7 @@ def create_initial_state(
         "inventory_result": None,
         "order_result": None,
         "shipment_result": None,
+        "knowledge_result": None,
         "completed_agents": [],
         "evidence": [],
         "errors": [],

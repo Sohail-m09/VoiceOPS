@@ -109,3 +109,30 @@ def test_supervisor_does_not_modify_original_state(supervisor):
 
     assert state["intent"] == original_intent
     assert state["selected_agents"] == original_agents
+
+
+def test_sop_request_routes_to_knowledge(supervisor):
+    intent, agents = supervisor.classify_request(
+        "Explain the procedure for reporting damaged inventory."
+    )
+
+    assert intent == "knowledge"
+    assert agents == ["knowledge"]
+
+
+def test_policy_request_routes_to_knowledge(supervisor):
+    intent, agents = supervisor.classify_request(
+        "What is the warehouse policy for stock adjustments?"
+    )
+
+    assert intent == "knowledge"
+    assert agents == ["knowledge"]
+
+
+def test_inventory_and_sop_request_routes_to_both(supervisor):
+    intent, agents = supervisor.classify_request(
+        "Check inventory and explain the stock adjustment procedure."
+    )
+
+    assert intent == "mixed"
+    assert agents == ["inventory", "knowledge"]

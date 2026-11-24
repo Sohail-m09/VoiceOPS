@@ -1,11 +1,7 @@
 
 import re
 
-from voiceops.agents.state import (
-    AgentName,
-    RequestIntent,
-    VoiceOpsState,
-)
+from voiceops.agents.state import AgentName, RequestIntent, VoiceOpsState
 
 
 class SupervisorAgent:
@@ -48,11 +44,24 @@ class SupervisorAgent:
         "arrival",
     }
 
+    KNOWLEDGE_KEYWORDS = {
+        "sop",
+        "procedure",
+        "procedures",
+        "policy",
+        "policies",
+        "guideline",
+        "guidelines",
+        "protocol",
+        "protocols",
+        "process",
+        "processes",
+        "work instruction",
+        "standard operating procedure",
+    }
+
     @staticmethod
-    def _contains_keyword(
-        text: str,
-        keywords: set[str],
-    ) -> bool:
+    def _contains_keyword(text: str, keywords: set[str]) -> bool:
         """Check whether a request contains any configured keyword."""
 
         for keyword in keywords:
@@ -61,11 +70,11 @@ class SupervisorAgent:
                     return True
             else:
                 pattern = rf"\b{re.escape(keyword)}\b"
-
                 if re.search(pattern, text):
                     return True
 
         return False
+
 
     def classify_request(
         self,
@@ -80,9 +89,30 @@ class SupervisorAgent:
 
         selected_agents: list[AgentName] = []
 
-        if self._contains_keyword(
+        has_knowledge = self._contains_keyword(
+            normalized_text,
+            self.KNOWLEDGE_KEYWORDS,
+        )
+
+        # Explicit operational actions should still select Inventory,
+        # even when the same request also asks about an SOP.
+        inventory_action_pattern = (
+            r"\b(check|show|get|find|lookup|look up|"
+            r"how many|calculate|verify)\b"
+            r".{0,60}\b(inventory|stock|quantity|sku|product)\b"
+        )
+
+        has_inventory_action = bool(
+            re.search(inventory_action_pattern, normalized_text)
+        )
+
+        has_inventory = self._contains_keyword(
             normalized_text,
             self.INVENTORY_KEYWORDS,
+        )
+
+        if has_inventory and (
+            not has_knowledge or has_inventory_action
         ):
             selected_agents.append("inventory")
 
@@ -99,13 +129,18 @@ class SupervisorAgent:
         if has_order:
             selected_agents.append("order")
 
-        # An order delay or delivery question requires shipment
-        # investigation as well as order investigation.
-        if has_shipment or has_order and any(
-            keyword in normalized_text
-            for keyword in ("delay", "delayed", "delivery", "tracking")
+        if has_shipment or (
+            has_order
+            and any(
+                keyword in normalized_text
+                for keyword in ("delay", "delayed", "delivery", "tracking")
+            )
         ):
-            selected_agents.append("shipment")
+            if "shipment" not in selected_agents:
+                selected_agents.append("shipment")
+
+        if has_knowledge:
+            selected_agents.append("knowledge")
 
         if not selected_agents:
             return "unknown", []
@@ -115,16 +150,12 @@ class SupervisorAgent:
 
         return selected_agents[0], selected_agents
 
-    def run(
-        self,
-        state: VoiceOpsState,
-    ) -> dict:
+
+    def run(self, state: VoiceOpsState) -> dict:
         """Return the Supervisor's state updates."""
 
-        request_text = state.get("request_text", "")
-
         intent, selected_agents = self.classify_request(
-            request_text
+            state.get("request_text", "")
         )
 
         return {

@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_embedding_dimensions: int = Field(default=768, gt=0, le=3072)
+    gemini_generation_model: str = "gemini-3.8-flash"
 
 
 @lru_cache

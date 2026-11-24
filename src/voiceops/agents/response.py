@@ -52,6 +52,7 @@ RESULT_KEYS = {
     "inventory": "inventory_result",
     "order": "order_result",
     "shipment": "shipment_result",
+    "knowledge": "knowledge_result",
 }
 
 
@@ -114,8 +115,8 @@ def consolidate_agent_outputs(
     if not selected_agents:
         overall_status = "not_required"
         answer = (
-            "I couldn't determine which operational information you need. "
-            "Please ask about inventory, an order, or a shipment."
+            "I couldn't determine what information you need. "
+            "Please ask about inventory, an order, a shipment, or a warehouse SOP."
         )
     else:
         successful_count = sum(result.status == "success" for result in agent_results)

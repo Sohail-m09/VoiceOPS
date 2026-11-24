@@ -91,6 +91,7 @@ def create_test_graph(
         inventory_agent=FakeAgent("inventory", tracker),
         order_agent=FakeAgent("order", tracker),
         shipment_agent=FakeAgent("shipment", tracker),
+        knowledge_agent=FakeAgent("knowledge", tracker),
     )
 
 
@@ -228,3 +229,45 @@ async def test_graph_saves_checkpoint_after_execution():
     assert snapshot.values["final_result"]["status"] == "success"
     assert snapshot.values["final_response"] == result["final_response"]
     assert snapshot.config["configurable"]["thread_id"] == ("checkpoint-test-thread")
+
+
+@pytest.mark.asyncio
+async def test_knowledge_request_routes_to_knowledge_only():
+    graph = create_test_graph()
+
+    state = create_initial_state(
+        create_test_context(
+            "Explain the procedure for reporting damaged inventory."
+        )
+    )
+
+    result = await run_graph(graph, state)
+
+    assert result["intent"] == "knowledge"
+    assert result["selected_agents"] == ["knowledge"]
+    assert result["knowledge_result"]["status"] == "success"
+    assert result["final_result"]["status"] == "success"
+    assert result["final_result"]["agent_results"][0]["agent"] == "knowledge"
+
+
+@pytest.mark.asyncio
+async def test_inventory_and_knowledge_agents_run_together():
+    graph = create_test_graph()
+
+    state = create_initial_state(
+        create_test_context(
+            "Check inventory and explain the stock adjustment procedure."
+        )
+    )
+
+    result = await run_graph(graph, state)
+
+    assert result["intent"] == "mixed"
+    assert set(result["selected_agents"]) == {
+        "inventory",
+        "knowledge",
+    }
+    assert result["inventory_result"]["status"] == "success"
+    assert result["knowledge_result"]["status"] == "success"
+    assert len(result["final_result"]["agent_results"]) == 2
+    assert len(result["final_result"]["evidence"]) == 2
