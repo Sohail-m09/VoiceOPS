@@ -2,7 +2,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = Field(default=30, gt=0)
 
     mcp_server_name: str = "VoiceOps MCP"
+
+    gemini_api_key: SecretStr | None = None
+    gemini_embedding_model: str = "gemini-embedding-2"
+    gemini_embedding_dimensions: int = Field(default=768, gt=0, le=3072)
 
 
 @lru_cache

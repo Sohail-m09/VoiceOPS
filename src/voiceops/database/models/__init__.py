@@ -1,4 +1,5 @@
 from voiceops.database.models.audit_log import AuditLog
+from voiceops.database.models.document_chunk import DocumentChunk
 from voiceops.database.models.inventory import Inventory
 from voiceops.database.models.inventory_movement import InventoryMovement
 from voiceops.database.models.order_item import OrderItem
@@ -24,4 +25,5 @@ __all__ = [
     "User",
     "UserWarehouse",
     "Warehouse",
+    "DocumentChunk"
 ]
