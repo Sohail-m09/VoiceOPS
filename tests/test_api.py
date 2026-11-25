@@ -46,6 +46,7 @@ def test_api_routes_are_registered():
         "/api/v1/orders/{order_number}",
         "/api/v1/orders/transfer",
         "/api/v1/shipments/{shipment_number}",
+        "/api/v1/chat",
     ]
 
     for path in expected_paths:

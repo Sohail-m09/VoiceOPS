@@ -1,9 +1,28 @@
+import asyncio
+import logging
+import tempfile
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from fastmcp import Client
+from google import genai
+from google.genai.errors import ServerError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from voiceops.agents.context_resolver import resolve_conversation_request
+from voiceops.agents.graph import build_agent_graph
+from voiceops.agents.state import create_initial_state
 from voiceops.api.v1.dependencies import (
     get_current_user,
     require_roles,
@@ -12,6 +31,9 @@ from voiceops.api.v1.dependencies import (
 from voiceops.config import get_settings
 from voiceops.core.security import create_access_token
 from voiceops.database.connection import get_db
+from voiceops.database.models.user_warehouse import UserWarehouse
+from voiceops.harness.context_manager import ContextManager
+from voiceops.mcp.server import create_mcp_server
 from voiceops.repositories.audit_logs import AuditRepository
 from voiceops.repositories.products import ProductRepository
 from voiceops.repositories.shipments import ShipmentRepository
@@ -28,12 +50,20 @@ from voiceops.schemas import (
     WarehouseResponse,
 )
 from voiceops.schemas.auth import LoginRequest, TokenResponse
+from voiceops.schemas.chat import ChatRequest, ChatResponse
 from voiceops.services.audit import AuditService
 from voiceops.services.auth import AuthService
+from voiceops.services.conversations import (
+    create_conversation,
+    get_conversation_history,
+    save_conversation_message,
+)
 from voiceops.services.exceptions import BusinessRuleError, NotFoundError
 from voiceops.services.inventory import InventoryService
 from voiceops.services.orders import OrderService
 
+logger = logging.getLogger(__name__)
+MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB
 router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
@@ -42,6 +72,79 @@ auth_router = APIRouter(
     prefix="/auth",
     tags=["Authentication"],
 )
+
+
+
+async def transcribe_audio(
+    *,
+    audio_bytes: bytes,
+    mime_type: str,
+) -> str:
+    """Transcribe uploaded audio using Gemini 3.5 Transcribe."""
+
+    settings = get_settings()
+
+    if settings.gemini_api_key is None:
+        raise RuntimeError("Gemini API key is not configured.")
+
+    def generate_transcript() -> str:
+        client = genai.Client(
+            api_key=settings.gemini_api_key.get_secret_value(),
+            http_options={"api_version": "v1beta"},
+        )
+
+        temporary_path = None
+        uploaded_file = None
+
+        try:
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav",
+                delete=False,
+            ) as temporary_file:
+                temporary_file.write(audio_bytes)
+                temporary_path = temporary_file.name
+
+            uploaded_file = client.files.upload(
+                file=temporary_path,
+            )
+
+            interaction = client.interactions.create(
+                model=settings.gemini_audio_model,
+                input=[
+                    {
+                        "type": "audio",
+                        "uri": uploaded_file.uri,
+                        "mime_type": uploaded_file.mime_type or mime_type,
+                    }
+                ],
+                generation_config={
+                    "transcription_config": {
+                        "mode": "verbatim",
+                    }
+                },
+            )
+
+            return interaction.output_text
+
+        finally:
+            if uploaded_file is not None:
+                try:
+                    client.files.delete(name=uploaded_file.name)
+                except Exception:
+                    logging.warning(
+                        "Could not delete temporary Gemini audio file.",
+                    )
+
+            if temporary_path is not None:
+                Path(temporary_path).unlink(missing_ok=True)
+
+    transcript = await asyncio.to_thread(generate_transcript)
+
+    if not isinstance(transcript, str) or not transcript.strip():
+        raise RuntimeError("Gemini returned an empty transcription.")
+
+    return transcript.strip()
+
 
 
 # ---------------------------------------------------------------------------
@@ -424,3 +527,300 @@ async def get_shipment(
         )
 
     return serialize_shipment(shipment)
+
+# ---------------------------------------------------------------------------
+# Text Chat - Authenticated users
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/chat",
+    response_model=ChatResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def chat(
+    payload: ChatRequest,
+    current_user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> ChatResponse:
+    """Process an authenticated message within a stored conversation."""
+
+    try:
+        # ---------------------------------------------------------
+        # 1. Create or retrieve the user's conversation
+        # ---------------------------------------------------------
+
+        if payload.conversation_id is None:
+            conversation = await create_conversation(
+                session=session,
+                user_id=current_user.id,
+                title=payload.message[:200],
+            )
+
+            conversation_id = conversation.id
+
+            conversation_history = []
+
+        else:
+            conversation_id = payload.conversation_id
+
+            # This function also verifies conversation ownership.
+            previous_messages = await get_conversation_history(
+                session=session,
+                conversation_id=conversation_id,
+                user_id=current_user.id,
+                limit=20,
+            )
+
+            conversation_history = [
+                {
+                    "role": message.role,
+                    "content": message.content,
+                }
+                for message in previous_messages
+            ]
+
+        # ---------------------------------------------------------
+        # 2. Load trusted warehouse access from PostgreSQL
+        # ---------------------------------------------------------
+
+        warehouse_ids = ()
+
+        if current_user.role != "admin":
+            result = await session.scalars(
+                select(UserWarehouse.warehouse_id).where(
+                    UserWarehouse.user_id == current_user.id
+                )
+            )
+
+            warehouse_ids = tuple(result.all())
+
+        # ---------------------------------------------------------
+        # 3. Create the execution context
+        # ---------------------------------------------------------
+
+        context = ContextManager.create_context(
+            user_id=current_user.id,
+            user_role=current_user.role,
+            warehouse_ids=warehouse_ids,
+            request_text=payload.message,
+            conversation_id=conversation_id,
+            metadata={"source": "streamlit_chat"},
+        )
+
+        # ---------------------------------------------------------
+        # 4. Persist the user's message before agent execution
+        # ---------------------------------------------------------
+
+        await save_conversation_message(
+            session=session,
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+            request_id=context.request_id,
+            role="user",
+            content=payload.message,
+        )
+
+        # Commit before external Gemini/MCP operations.
+        await session.commit()
+
+        # ---------------------------------------------------------
+        # 5. Resolve the message using previous conversation history
+        # ---------------------------------------------------------
+
+        resolution = await resolve_conversation_request(
+            current_message=payload.message,
+            conversation_history=conversation_history,
+        )
+
+        if resolution["needs_clarification"]:
+            clarification = resolution["clarification_question"]
+
+            await save_conversation_message(
+                session=session,
+                conversation_id=conversation_id,
+                user_id=current_user.id,
+                request_id=context.request_id,
+                role="assistant",
+                content=clarification,
+            )
+
+            await session.commit()
+
+            return ChatResponse(
+                request_id=context.request_id,
+                conversation_id=conversation_id,
+                status="not_required",
+                answer=clarification,
+                clarification_required=True,
+                agent_results=[],
+                evidence=[],
+                errors=[],
+            )
+
+        resolved_request = resolution["resolved_request"]
+
+        # ---------------------------------------------------------
+        # 6. Create the initial LangGraph state
+        # ---------------------------------------------------------
+
+        initial_state = create_initial_state(
+            context,
+            conversation_history=conversation_history,
+            resolved_request=resolved_request,
+        )
+
+        # ---------------------------------------------------------
+        # 7. Run the existing MCP + LangGraph workflow
+        # ---------------------------------------------------------
+
+        mcp_server = create_mcp_server(context)
+
+        async with Client(mcp_server) as mcp_client:
+            graph = build_agent_graph(
+                mcp_client=mcp_client,
+                execution_context=context,
+            )
+
+            graph_result = await graph.ainvoke(
+                initial_state,
+                config={
+                    "configurable": {
+                        "thread_id": str(conversation_id),
+                    }
+                },
+            )
+
+        final_result = graph_result.get("final_result")
+
+        if not isinstance(final_result, dict):
+            raise RuntimeError(
+                "The agent graph did not return a valid final result."
+            )
+
+        answer = final_result.get("answer")
+
+        if not isinstance(answer, str) or not answer.strip():
+            raise RuntimeError(
+                "The agent graph returned an invalid answer."
+            )
+
+        # ---------------------------------------------------------
+        # 8. Save the assistant's response
+        # ---------------------------------------------------------
+
+        await save_conversation_message(
+            session=session,
+            conversation_id=conversation_id,
+            user_id=current_user.id,
+            request_id=context.request_id,
+            role="assistant",
+            content=answer,
+        )
+
+        await session.commit()
+
+        # ---------------------------------------------------------
+        # 9. Return the response to Streamlit
+        # ---------------------------------------------------------
+
+        return ChatResponse(
+            request_id=context.request_id,
+            conversation_id=conversation_id,
+            clarification_required=False,
+            **final_result,
+        )
+
+    except NotFoundError as exc:
+        await session.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    except HTTPException:
+        await session.rollback()
+        raise
+
+    except Exception as exc:
+        await session.rollback()
+
+        logger.exception(
+            "Chat request failed. user_id=%s",
+            current_user.id,
+        )
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The chat request could not be completed.",
+        ) from exc
+
+# ---------------------------------------------------------------------------
+# Audio Transcription - Authenticated users
+# ---------------------------------------------------------------------------
+
+
+@router.post("/transcribe")
+async def transcribe(
+    audio: UploadFile = File(...),
+) -> dict[str, str]:
+    """Transcribe an uploaded WAV audio recording."""
+
+    supported_mime_types = {
+        "audio/wav",
+        "audio/x-wav",
+    }
+
+    if audio.content_type not in supported_mime_types:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported audio format. Please upload a WAV file.",
+        )
+
+    try:
+        audio_bytes = await audio.read(MAX_AUDIO_BYTES + 1)
+
+        if not audio_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="The uploaded audio file is empty.",
+            )
+
+        if len(audio_bytes) > MAX_AUDIO_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Audio file exceeds the 10 MB limit.",
+            )
+
+        transcript = await transcribe_audio(
+            audio_bytes=audio_bytes,
+            mime_type=audio.content_type,
+        )
+
+        return {"transcript": transcript}
+
+    except HTTPException:
+        raise
+
+    except ServerError as exc:
+        logger.exception("Gemini transcription service is unavailable.")
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The transcription service is temporarily unavailable. "
+                "Please try again."
+            ),
+        ) from exc
+
+    except Exception as exc:
+        logger.exception("Audio transcription failed.")
+
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Audio transcription could not be completed.",
+        ) from exc
+
+    finally:
+        await audio.close()

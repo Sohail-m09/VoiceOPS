@@ -1,5 +1,6 @@
 from voiceops.schemas.audit_logs import AuditLogResponse
 from voiceops.schemas.auth import LoginRequest, TokenResponse
+from voiceops.schemas.chat import ChatRequest, ChatResponse
 from voiceops.schemas.inventory import InventoryResponse
 from voiceops.schemas.orders import (
     OrderItemResponse,
@@ -25,4 +26,6 @@ __all__ = [
     "LoginRequest",
     "TokenResponse",
     "AuditLogResponse",
+    "ChatRequest",
+    "ChatResponse",
 ]

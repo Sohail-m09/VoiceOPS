@@ -7,7 +7,7 @@ from voiceops.agents.shipment_tools import (
     ShipmentLookupError,
     create_shipment_executor,
 )
-from voiceops.agents.state import AgentResult, EvidenceItem
+from voiceops.agents.state import AgentResult, EvidenceItem, get_effective_request
 from voiceops.harness.context_manager import ExecutionContext
 from voiceops.harness.executor import ToolExecutionError, ToolExecutor
 from voiceops.harness.policy_engine import PolicyDeniedError
@@ -66,7 +66,7 @@ class ShipmentAgent:
         }
 
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
-        request_text = state.get("request_text", "")
+        request_text = get_effective_request(state)
         context_data = state.get("execution_context")
 
         if not isinstance(request_text, str) or not request_text.strip():

@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from voiceops.agents.state import get_effective_request
 from voiceops.config import get_settings
 from voiceops.database.connection import AsyncSessionLocal
 from voiceops.rag.embeddings import create_gemini_client
@@ -33,7 +34,7 @@ def create_knowledge_agent(
 
         nonlocal resolved_client, resolved_generation_model
 
-        request_text = state.get("request_text", "")
+        request_text = get_effective_request(state)
 
         if not isinstance(request_text, str) or not request_text.strip():
             return _failure(

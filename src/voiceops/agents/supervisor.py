@@ -1,7 +1,12 @@
 
 import re
 
-from voiceops.agents.state import AgentName, RequestIntent, VoiceOpsState
+from voiceops.agents.state import (
+    AgentName,
+    RequestIntent,
+    VoiceOpsState,
+    get_effective_request,
+)
 
 
 class SupervisorAgent:
@@ -154,8 +159,10 @@ class SupervisorAgent:
     def run(self, state: VoiceOpsState) -> dict:
         """Return the Supervisor's state updates."""
 
+        request_text = get_effective_request(state)
+
         intent, selected_agents = self.classify_request(
-            state.get("request_text", "")
+            request_text
         )
 
         return {

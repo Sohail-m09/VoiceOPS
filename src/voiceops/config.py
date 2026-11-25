@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_embedding_dimensions: int = Field(default=768, gt=0, le=3072)
     gemini_generation_model: str = "gemini-3.8-flash"
+    gemini_audio_model: str = "gemini-3.5-transcribe"
 
 
 @lru_cache

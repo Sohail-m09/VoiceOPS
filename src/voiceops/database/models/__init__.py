@@ -1,4 +1,6 @@
 from voiceops.database.models.audit_log import AuditLog
+from voiceops.database.models.conversation import Conversation
+from voiceops.database.models.conversation_message import ConversationMessage
 from voiceops.database.models.document_chunk import DocumentChunk
 from voiceops.database.models.inventory import Inventory
 from voiceops.database.models.inventory_movement import InventoryMovement
@@ -25,5 +27,7 @@ __all__ = [
     "User",
     "UserWarehouse",
     "Warehouse",
-    "DocumentChunk"
+    "DocumentChunk",
+    "Conversation",
+    "ConversationMessage",
 ]

@@ -9,7 +9,7 @@ from voiceops.agents.inventory_tools import (
     InventoryLookupError,
     create_inventory_executor,
 )
-from voiceops.agents.state import AgentResult, EvidenceItem
+from voiceops.agents.state import AgentResult, EvidenceItem, get_effective_request
 from voiceops.database.connection import AsyncSessionLocal
 from voiceops.harness.context_manager import ExecutionContext
 from voiceops.harness.executor import ToolExecutionError, ToolExecutor
@@ -80,7 +80,7 @@ class InventoryAgent:
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
         """Execute the inventory investigation."""
 
-        request_text = state.get("request_text", "")
+        request_text = get_effective_request(state)
         context_data = state.get("execution_context")
 
         if not isinstance(request_text, str) or not request_text.strip():
